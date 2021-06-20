@@ -15,7 +15,7 @@ Block diagram of the windowing function showing input/output signals, parameters
 <p  align="center">
  <img src="./doc/windowing.svg"  alt="Windowing">
 </p>
-Parameters are listed inside `case class WindowingParams` :
+Parameters are listed inside case class WindowingParams:
 
      case class WindowingParams [T <: Data] (
         	protoIQ : DspComplex[T],         // input data type
@@ -42,6 +42,7 @@ Parameters are listed inside `case class WindowingParams` :
  * User specified - in this case user provides vector of window coefficients
 
 Just to emphasize, those functions are forwarded to the core in floating point precision, inside the module coefficients are translated to their fixed-point representation using convergent rounding method.
+
 \**** In run time configurable mode, file with windowing coefficients (name defined inside `memoryFile` string) is generated on the fly and that file is used for RAM initialization.
 
 Previously explained module is described with following Scala files available inside`src/main/scala`  directory:
