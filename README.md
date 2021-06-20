@@ -12,14 +12,16 @@ In the text below, module specification together with parameters definition and 
 
 Module which implements continuous multiplication of the input samples with windowing coefficients is implemented as a AXI4 DSP Block with AXI4-stream input/output interface and AXI4 memory-mapped bus for configuring control registers and Windowing RAM.
 Block diagram of the windowing function showing input/output signals, parameters of the core as well as control registers is depicted in the figure below.
-![Windowing](./doc/windowing.svg)
-
+[comment]: <> (![Windowing](./doc/windowing.svg))
+<p  align="center">
+ <img src="./doc/windowing.svg"  alt="Windowing">
+</p>
 Parameters are listed inside `case class WindowingParams` :
 
      case class WindowingParams [T <: Data] (
         	protoIQ : DspComplex[T],         // input data type
-        	numPoints : Int, 		         // number of window coefficents
-        	protoWin : T, 			         // window coefficients data type
+        	numPoints : Int, 		 // number of window coefficents
+        	protoWin : T, 			 // window coefficients data type
         	decimType : DecimType,           // use DIT or DIF version, to know how to generate addresses for reading*
            	numMulPipes : Int,               // number of pipeline registers after multiplication operator
         	fftDirReg : Boolean,             // include register for defining fft direction (fft or ifft)/ when ifft is enabled passthrough data**
