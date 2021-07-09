@@ -23,8 +23,9 @@ case class WindowingParams[T <: Data] (
   numMulPipes     : Int,                   // number of pipeline registers after multiplication operator
   fftDirReg       : Boolean,               // include register for defining fft direction (fft or ifft)/ when ifft is enabled passthrough data
   windowFunc      : WindowFunctionType,    // when constWindow is set then this parameter denotes constant window function
-                                           // otherwise it represents window function used to initialize SRAM/Block RAM in run-time configurable mode
+                                           // otherwise it represents window function used to initialize SRAM/Block RAM in run-time configurable modez
   memoryFile      : String,                // name of the file where window coefficents are stored
+  dirName         : String,                // directory name where file with windowing coefficents is saved
   constWindow     : Boolean                // predefined window function stored in ROM is used, no SRAM/Block RAM
 ) {
   // Allowed values for some parameters
@@ -41,9 +42,10 @@ object WindowingParams {
             fftDirReg       : Boolean = false,
             windowFunc      : WindowFunctionType = WindowFunctionTypes.None(),
             memoryFile      : String = "",
+            dirName         : String = "windowing_coefficents",
             constWindow     : Boolean = false
             ): WindowingParams[FixedPoint] = {
-    val protoIQ      = DspComplex(FixedPoint(dataWidth.W, binPoint.BP))
+    val protoIQ  = DspComplex(FixedPoint(dataWidth.W, binPoint.BP))
     val protoWin = FixedPoint(windowFunc.dataWidth.W, (windowFunc.dataWidth - 2).BP)
 
     WindowingParams(
@@ -55,6 +57,7 @@ object WindowingParams {
       numMulPipes = numMulPipes,
       fftDirReg = fftDirReg,
       windowFunc = windowFunc,
+      dirName = dirName,
       memoryFile = memoryFile,
       constWindow = constWindow
     )

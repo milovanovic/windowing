@@ -92,7 +92,7 @@ class WindowingBlockTester
   poke(dut.out.ready, true.B)
   
   // enable windowing
-  memWriteWord(csrAddress.base + 2*beatBytes, BigInt(1))
+  memWriteWord(csrAddress.base + beatBytes, BigInt(1))
   // master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
   master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
   
@@ -197,6 +197,7 @@ class WindowingBlockSpec extends FlatSpec with Matchers {
     binPoint = 0,
     numMulPipes = 1,
     constWindow = true,
+    dirName = "test_run_dir",
     memoryFile = "./test_run_dir/triangularConst.hex",
     windowFunc = WindowFunctionTypes.Triangular(dataWidth_tmp = 16)//Blackman(dataWidth_tmp = 16)
   )
@@ -214,6 +215,7 @@ class WindowingBlockSpec extends FlatSpec with Matchers {
     numPoints = 16,
     binPoint = 0,
     numMulPipes = 1,
+    dirName = "test_run_dir",
     memoryFile = "./test_run_dir/TriangularRunTime.hex",
     windowFunc = WindowFunctionTypes.Triangular(dataWidth_tmp = 16)//Blackman(dataWidth_tmp = 16)
   )

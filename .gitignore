@@ -3,6 +3,7 @@ test_run_dir/
 *.v
 *.conf
 *.json
+*.f
 
 target/
 project/

@@ -137,8 +137,7 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       case _ => 0
     })
     
-    // maybe implement as parameter
-    val dirName = "test_run_dir"
+    val dirName = params.dirName
     val dir = new File(dirName)
     if (!(dir.exists() && dir.isDirectory()))
       dir.mkdir()
@@ -210,10 +209,10 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       // settable registers
       RegField(log2Ceil(params.numPoints), fftSize,
         RegFieldDesc(name = "fftSize", desc = "contains fft size which is used for run time configurability control")),
-      RegField(1, fftDir, 
-        RegFieldDesc(name = "fftDir", desc = "transform direction: fft or ifft")),
       RegField(1, enableWind,
-        RegFieldDesc(name = "enableWin", desc = "enable or disable windowing"))
+        RegFieldDesc(name = "enableWin", desc = "enable or disable windowing")),
+      RegField(1, fftDir,
+        RegFieldDesc(name = "fftDir", desc = "transform direction: fft or ifft"))
     )
 
     axiRegSlaveNode.regmap(fields.zipWithIndex.map({ case (f, i) => i * beatBytes -> Seq(f)}): _*)
@@ -263,6 +262,7 @@ object WindowingBlockApp extends App
     dataWidth = 16,
     binPoint = 14,
     numMulPipes = 1,
+    dirName = "test_run_dir",
     memoryFile = "./test_run_dir/blacman.txt",
     windowFunc = WindowFunctionTypes.Blackman(dataWidth_tmp = 16)
   )
