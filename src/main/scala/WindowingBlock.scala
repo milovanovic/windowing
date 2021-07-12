@@ -87,7 +87,7 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
     
     val (ramIn, ramInEdge) = ramSlaveNode.in.head
     val windowMem = SyncReadMem(params.numPoints, params.protoWin)
-    val r_addr_reg = RegInit(1.U((log2Ceil(params.numPoints)).W))
+    val r_addr_reg = RegInit(0.U((log2Ceil(params.numPoints)).W))
     //val r_addr     = Wire(r_addr_reg.cloneType)
     val address_rom = RegInit(0.U((log2Ceil(params.numPoints)).W)) // implement with Option
 
@@ -175,7 +175,7 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       when (in.fire()) {
         address_rom := address_rom + 1.U
       }
-      when (in.bits.last || address_rom === (numPoints - 1.U)) {
+      when (address_rom === (numPoints - 1.U)) {
         address_rom := 0.U
       }
     }
@@ -183,21 +183,15 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       when (in.fire()) {
         r_addr_reg := r_addr_reg + 1.U
       }
-//       when (in.bits.last || r_addr_reg === (numPoints - 1.U)) {
-//         r_addr_reg := 1.U
-//       }
-      when (in.bits.last) {
-        r_addr_reg := 1.U
-      }
-      .elsewhen (r_addr_reg === (numPoints - 1.U)) {
+      when (r_addr_reg === (numPoints - 1.U)) {
         r_addr_reg := 0.U
       }
     }
     
-    val r_addr = Mux(state === sIdle && state_next =/= sProcess, 0.U, r_addr_reg)
+    //val r_addr = Mux(state === sIdle && state_next =/= sProcess, 0.U, r_addr_reg)
     // r_addr.suggestName("read_address_win")
     // dontTouch(r_addr)
-    val winCoeff = if (params.constWindow == true) windowROM(address_rom) else windowMem(r_addr)
+    val winCoeff = if (params.constWindow == true) windowROM(address_rom) else windowMem(r_addr_reg)
 
     // dontTouch(winCoeff)
     // winCoeff.suggestName("windowCoeff")
@@ -225,7 +219,7 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
 
     axiRegSlaveNode.regmap(fields.zipWithIndex.map({ case (f, i) => i * beatBytes -> Seq(f)}): _*)
       
-    val inComplex = in.bits.data.asTypeOf(params.protoIQ)
+    val inComplex = if (params.constWindow) in.bits.data.asTypeOf(params.protoIQ) else RegNext(in.bits.data.asTypeOf(params.protoIQ))
     val windowedInput =  Wire(params.protoIQ.cloneType)
     
     when (enableWind) {
@@ -235,23 +229,25 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       }
     }
     .otherwise {
-      windowedInput := ShiftRegister(in.bits.data.asTypeOf(params.protoIQ), numMulPipes, en = true.B)
+      windowedInput := ShiftRegister(inComplex, numMulPipes, en = true.B)
     }
 
-    if (numMulPipes == 0) {
+    if (params.constWindow && numMulPipes == 0) {
       out.valid        := in.valid
       out.bits.data    := windowedInput.asUInt
       out.bits.last    := in.bits.last
     }
     else {
-      val queueData = Module(new Queue(params.protoIQ.cloneType, numMulPipes + 1, flow = true))
+      val queueDelay = if (params.constWindow) numMulPipes + 1  else numMulPipes + 2
+      val inputsDelay = if (params.constWindow) numMulPipes else numMulPipes + 1
+      val queueData = Module(new Queue(params.protoIQ.cloneType, queueDelay, flow = true)) // + 1 for input delaying
       queueData.io.enq.bits := windowedInput
-      queueData.io.enq.valid := ShiftRegister(in.valid, numMulPipes, en = true.B)
+      queueData.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B)
       queueData.io.deq.ready := out.ready
 
-      val queueLast = Module(new Queue(Bool(), numMulPipes + 1, flow = true))
-      queueLast.io.enq.valid := ShiftRegister(in.valid, numMulPipes, en = true.B)
-      queueLast.io.enq.bits := ShiftRegister(in.bits.last, numMulPipes, en = true.B)
+      val queueLast = Module(new Queue(Bool(), queueDelay, flow = true)) // +1 for input delaying
+      queueLast.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B) // +1 for input delaying
+      queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B) // +1 for input delaying
       queueLast.io.deq.ready := out.ready
 
       // Connect output
@@ -259,6 +255,7 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       out.bits.data    := queueData.io.deq.bits.asUInt
       out.bits.last    := queueLast.io.deq.bits
     }
+
     in.ready          := out.ready
   }
 }
