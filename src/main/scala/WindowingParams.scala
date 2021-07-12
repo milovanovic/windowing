@@ -23,7 +23,7 @@ case class WindowingParams[T <: Data] (
   numMulPipes     : Int,                   // number of pipeline registers after multiplication operator
   fftDirReg       : Boolean,               // include register for defining fft direction (fft or ifft)/ when ifft is enabled passthrough data
   windowFunc      : WindowFunctionType,    // when constWindow is set then this parameter denotes constant window function
-                                           // otherwise it represents window function used to initialize SRAM/Block RAM in run-time configurable modez
+                                           // otherwise it represents window function used to initialize SRAM/Block RAM in run-time configurable mode
   memoryFile      : String,                // name of the file where window coefficents are stored
   dirName         : String,                // directory name where file with windowing coefficents is saved
   constWindow     : Boolean                // predefined window function stored in ROM is used, no SRAM/Block RAM
