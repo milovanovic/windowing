@@ -1,4 +1,5 @@
 
+
 Streaming windowing function written in Chisel HDL
 =======================================================
 
@@ -27,6 +28,7 @@ Parameters are listed inside case class WindowingParams:
         	windowFunc : WindowFunctionType, // when constWindow is set then this parameter denotes constant window function
         	                                 // otherwise it represents window function used to initialize SRAM/Block RAM in run-time configurable mode***
         	memoryFile : String,             // name of the file where window coefficents are stored****
+        	dirName    : String,             // directory name where file with windowing coefficents is saved
         	constWindow : Boolean            // if it is true, predefined window function stored in ROM is used, no SRAM/Block RAM
         )
 
@@ -65,3 +67,5 @@ Besides main source code, some tests for windowing module are provided in this r
 * `TesterUtil` -  contains useful functions for AXI4 stream data generation and tolerance checking
 * `WindowingSpec` - contains simple test for `WindowingBlock` module. Test uses `AXI4MasterModel` and `AXI4StreamModel` for proper register/windowing RAM initialization and streaming transactions generation.
 
+## TODO
+* Check `numMulPipes` equal to zero and `constWindow` parameter is on true - fix that
