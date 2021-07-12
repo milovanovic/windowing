@@ -183,14 +183,22 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       when (in.fire()) {
         r_addr_reg := r_addr_reg + 1.U
       }
-      when (in.bits.last || r_addr_reg === (numPoints - 1.U)) {
+//       when (in.bits.last || r_addr_reg === (numPoints - 1.U)) {
+//         r_addr_reg := 1.U
+//       }
+      when (in.bits.last) {
         r_addr_reg := 1.U
+      }
+      .elsewhen (r_addr_reg === (numPoints - 1.U)) {
+        r_addr_reg := 0.U
       }
     }
     
     val r_addr = Mux(state === sIdle && state_next =/= sProcess, 0.U, r_addr_reg)
+    // r_addr.suggestName("read_address_win")
+    // dontTouch(r_addr)
     val winCoeff = if (params.constWindow == true) windowROM(address_rom) else windowMem(r_addr)
-    
+
     // dontTouch(winCoeff)
     // winCoeff.suggestName("windowCoeff")
     

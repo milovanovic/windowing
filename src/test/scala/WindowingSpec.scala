@@ -93,7 +93,7 @@ class WindowingBlockTester
   
   // enable windowing
   memWriteWord(csrAddress.base + beatBytes, BigInt(1))
-  // master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
+  master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
   master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
   
   var outSeq = Seq[Int]()
@@ -151,6 +151,7 @@ class WindowingBlockTester
       cycle += 1
     }
     step(100)
+    master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
     master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
     
     outSeq = Seq()
