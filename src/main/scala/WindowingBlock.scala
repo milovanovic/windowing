@@ -152,9 +152,9 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
     }
     w.close()
 
-    if (params.memoryFile.trim().nonEmpty) {
-      loadMemoryFromFile(windowMem, params.memoryFile)
-    }
+//     if (params.memoryFile.trim().nonEmpty) {
+//       loadMemoryFromFile(windowMem, params.memoryFile)
+//     }
     
     switch(state) {
       is (sIdle) {
@@ -199,7 +199,7 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
     // Control registers
     val fftSize         = RegInit(params.numPoints.U(log2Ceil(params.numPoints + 1).W)) // default value is equal to compile time parameter for fft size
     val fftDir          = RegInit(true.B)
-    val enableWind      = RegInit(true.B)
+    val enableWind      = RegInit(false.B) // just check does this enableWind works as it should
     
     if (params.runTime == true)
       numPoints := fftSize
