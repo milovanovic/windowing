@@ -126,11 +126,14 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
       }
       case WindowFunctionTypes.None(_) => Seq.fill(params.numPoints)(1.0)
     }
-    
-    // consider implementation with Option
+    // println(windowSeq)
+    // consider implementation with Option!!!!
     val windowROM = VecInit(windowSeq.map(t => {
-      val coeff = ConvertableTo[T].fromDoubleWithFixedWidth(t, params.protoWin)
-      coeff }))
+      DspContext.withTrimType(Convergent) {
+        val coeff = params.protoWin.fromDoubleWithFixedWidth(t)
+        coeff
+      }}
+    ))
     
     val bposWin = (params.protoWin match {
       case fp: FixedPoint => fp.binaryPoint.get
@@ -187,15 +190,12 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
         r_addr_reg := 0.U
       }
     }
-    
+
     //val r_addr = Mux(state === sIdle && state_next =/= sProcess, 0.U, r_addr_reg)
     // r_addr.suggestName("read_address_win")
     // dontTouch(r_addr)
     val winCoeff = if (params.constWindow == true) windowROM(address_rom) else windowMem(r_addr_reg)
 
-    // dontTouch(winCoeff)
-    // winCoeff.suggestName("windowCoeff")
-    
     // Control registers
     val fftSize         = RegInit(params.numPoints.U(log2Ceil(params.numPoints + 1).W)) // default value is equal to compile time parameter for fft size
     val fftDir          = RegInit(true.B)
@@ -222,8 +222,13 @@ class WindowingBlock [T <: Data : Real: BinaryRepresentation] (csrAddress: Addre
     val inComplex = if (params.constWindow) in.bits.data.asTypeOf(params.protoIQ) else RegNext(in.bits.data.asTypeOf(params.protoIQ))
     val windowedInput =  Wire(params.protoIQ.cloneType)
     
+
     when (enableWind) {
-      DspContext.withNumMulPipes(numMulPipes) {
+      DspContext.alter(DspContext.current.copy(
+        trimType = params.trimType,
+        numMulPipes = params.numMulPipes,
+        binaryPointGrowth = 0
+      )) {
         windowedInput.real := inComplex.real context_* winCoeff
         windowedInput.imag := inComplex.imag context_* winCoeff
       }
@@ -267,6 +272,7 @@ object WindowingBlockApp extends App
     dataWidth = 16,
     binPoint = 14,
     numMulPipes = 1,
+    trimType = Convergent,
     dirName = "test_run_dir",
     memoryFile = "./test_run_dir/blacman.txt",
     windowFunc = WindowFunctionTypes.Blackman(dataWidth_tmp = 16)
