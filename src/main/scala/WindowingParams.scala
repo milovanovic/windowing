@@ -26,7 +26,8 @@ case class WindowingParams[T <: Data] (
                                            // otherwise it represents window function used to initialize SRAM/Block RAM in run-time configurable mode
   memoryFile      : String,                // name of the file where window coefficents are stored
   dirName         : String,                // directory name where file with windowing coefficents is saved
-  constWindow     : Boolean                // predefined window function stored in ROM is used, no SRAM/Block RAM
+  constWindow     : Boolean,               // predefined window function stored in ROM is used, no SRAM/Block RAM
+  trimType        : TrimType             // define trim type after multiplication
 ) {
   // Allowed values for some parameters
   final val allowedDecimTypes    = Seq(DITDecimType, DIFDecimType)
@@ -43,7 +44,8 @@ object WindowingParams {
             windowFunc      : WindowFunctionType = WindowFunctionTypes.None(),
             memoryFile      : String = "",
             dirName         : String = "windowing_coefficents",
-            constWindow     : Boolean = false
+            constWindow     : Boolean = false,
+            trimType        : TrimType = Convergent
             ): WindowingParams[FixedPoint] = {
     val protoIQ  = DspComplex(FixedPoint(dataWidth.W, binPoint.BP))
     val protoWin = FixedPoint(windowFunc.dataWidth.W, (windowFunc.dataWidth - 2).BP)
@@ -59,7 +61,8 @@ object WindowingParams {
       windowFunc = windowFunc,
       dirName = dirName,
       memoryFile = memoryFile,
-      constWindow = constWindow
+      constWindow = constWindow,
+      trimType = trimType
     )
   }
 }
