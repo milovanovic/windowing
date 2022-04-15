@@ -49,15 +49,23 @@ class WindowingBlockTester
   freq      : Double = 15.54/1024,
   tolerance : Int = 3,
   beatBytes : Int = 4,
+  scale     : Int = 14,
   silentFail: Boolean = false
 ) extends PeekPokeTester(dut.module) with AXI4StreamModel with AXI4MasterModel with HasSignalUtils {
   def memAXI: AXI4Bundle = dut.ioMem.get
+
 
   val mod = dut.module
   val params = dut.params
   val fftSize = params.numPoints
   val master = bindMaster(dut.in.getWrappedValue) // bindMaster(dut.in)
   
+   val binPoint = (params.protoIQ.real.cloneType match {
+     case fp: FixedPoint => fp.binaryPoint.get
+     case _ => 0
+  })
+
+
   val windowSeqInit = params.windowFunc match {
     case WindowFunctionTypes.Hamming(_, alpha, beta, _) => WindowFunctions.hammingWindow(params.numPoints, alpha, beta)
     case WindowFunctionTypes.Hanning(_, _) => WindowFunctions.hanningWindow(params.numPoints)
@@ -73,7 +81,7 @@ class WindowingBlockTester
   // just drive input data - real data only
   //val inData = (0 until fftSize).map( i => (math.sin(2 * math.Pi * freq * i) * scala.math.pow(2, 14)).toInt)
   // complex data
-  val inData = getTone(numSamples = fftSize, f1r = freq, f1i = freq).map(c => Complex(c.real*scala.math.pow(2, 14).toInt, c.imag*scala.math.pow(2, 14).toInt))
+  val inData = getTone(numSamples = fftSize, f1r = freq, f1i = freq).map(c => Complex(c.real*scala.math.pow(2, scale), c.imag*scala.math.pow(2, scale)))
   println("Input data is:")
   inData.map(c => println(c.toString))
   
@@ -82,19 +90,15 @@ class WindowingBlockTester
   // ################################## or when constant window function is used (exclude RAM for storing coefficents) #############################
   // ###############################################################################################################################################
   
-  var expectedOut = inData.zip(windowSeqInit).map { case (sig, win) => (sig*win) }.map(c => Complex(c.real.toInt, c.imag.toInt))
+  var expectedOut = inData.zip(windowSeqInit).map { case (sig, win) => (sig*win) }.map(c => Complex(c.real, c.imag))
   println("Expected output is:")
   expectedOut.map(c => println(c.toString))
-  
+  val expectedDepth = fftSize
+
   // val axi4StreamIn = formAXI4StreamRealData(inData, 16) //formAXI4StreamRealData(inData, 16)
   val axi4StreamIn = formAXI4StreamComplexData(inData, 16)
   step(1)
   poke(dut.out.ready, true.B)
-  
-  // enable windowing
-  memWriteWord(csrAddress.base + beatBytes, BigInt(1))
-  master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
-  master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
   
   var outSeq = Seq[Int]()
   var peekedVal: BigInt = 0
@@ -103,33 +107,37 @@ class WindowingBlockTester
   var tmpReal: Short = 0
   var tmpImag: Short = 0
 
-  // check only one fft window 
-  while (outSeq.length < fftSize) {
-    if (peek(dut.out.valid) == 1 && peek(dut.out.ready) == 1) {
-      peekedVal = peek(dut.out.bits.data)
-      outSeq = outSeq :+ peekedVal.toInt
-      tmpReal = (peekedVal.toInt / pow(2,16)).toShort
-      tmpImag = (peekedVal.toInt - (tmpReal.toInt * pow(2,16))).toShort
-      realSeq = realSeq :+ tmpReal.toInt
-      imagSeq = imagSeq :+ tmpImag.toInt
+  if (params.constWindow == true) {
+    // enable windowing
+    memWriteWord(csrAddress.base + beatBytes, BigInt(1))
+    master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
+    master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
+    // check only one fft window
+    while (outSeq.length < fftSize) {
+      if (peek(dut.out.valid) == 1 && peek(dut.out.ready) == 1) {
+        peekedVal = peek(dut.out.bits.data)
+        outSeq = outSeq :+ peekedVal.toInt
+        tmpReal = (peekedVal.toInt / pow(2,16)).toShort
+        tmpImag = (peekedVal.toInt - (tmpReal.toInt * pow(2,16))).toShort
+        realSeq = realSeq :+ tmpReal.toInt
+        imagSeq = imagSeq :+ tmpImag.toInt
+      }
+      step(1)
     }
-    step(1)
-  }
-  
-  var receivedOut = realSeq.zip(imagSeq).map { case (real, imag) => Complex(real, imag) }
-  println("Received output")
-  receivedOut.map(c => println(c.toString))
-  
-  expectedOut.zip(receivedOut).foreach {
-    case (in, out) => 
-      require(math.abs(in.real - out.real) <= tolerance & math.abs(in.imag - out.imag) <= tolerance, "Tolerance is not satisfied")
-  }
+
+    var receivedOut = realSeq.zip(imagSeq).map { case (real, imag) => Complex(real, imag) }
+    println("Received output")
+    receivedOut.map(c => println(c.toString))
+
+    expectedOut.zip(receivedOut).foreach {
+      case (in, out) =>
+        require(math.abs(in.real - out.real) <= tolerance & math.abs(in.imag - out.imag) <= tolerance, "Tolerance is not satisfied")
+    }
   // ###############################################################################################################################
-  
   // ######################### Test streaming windowing when RAM is used for storing window coefficents ############################
   // ###############################################################################################################################
-   val expectedDepth = fftSize 
-  if (params.constWindow == false) {
+  }
+  else {
     var cycle = 0
     // write window function to RAM
     // assume that fftSize is equal to compile time parameter numPoints
@@ -150,7 +158,9 @@ class WindowingBlockTester
       memWriteWord(ramAddress.base + cycle*beatBytes, windowHDW(cycle))
       cycle += 1
     }
-    step(100)
+    step(500)
+    memWriteWord(csrAddress.base + beatBytes, BigInt(1))
+
     master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
     master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
     
@@ -170,16 +180,16 @@ class WindowingBlockTester
       }
       step(1)
     }
-    expectedOut = inData.zip(windowSeqRunTime).map { case (sig, win) => (sig*win) }.map(c => Complex(c.real.toInt, c.imag.toInt))
-    receivedOut = realSeq.zip(imagSeq).map { case (real, imag) => Complex(real, imag) }
-    
+    expectedOut = inData.zip(windowSeqRunTime).map { case (sig, win) => (sig*win) }
+    var receivedOut = realSeq.zip(imagSeq).map { case (real, imag) => Complex(real, imag) }
+
     println("Expected output is:")
     expectedOut.map(c => println(c.toString))
     
     println("Received output")
     receivedOut.map(c => println(c.toString))
     expectedOut.zip(receivedOut).foreach {
-      case (in, out) => 
+      case (in, out) =>
         require(math.abs(in.real - out.real) <= tolerance & math.abs(in.imag - out.imag) <= tolerance, "Tolerance is not satisfied")
     }
   }
@@ -207,7 +217,7 @@ class WindowingBlockSpec extends FlatSpec with Matchers {
     val lazyDut = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), paramsWindowingConst, beatBytes = 4) with WindowingStandaloneBlock)
 
     chisel3.iotesters.Driver.execute(Array("-tiwv", "-tbn", "verilator", "-tivsuv"), () => lazyDut.module) {
-      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), beatBytes = 4, silentFail = true)
+      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), beatBytes = 4, scale = 14, silentFail = true)
     } should be (true)
   }
   
@@ -225,7 +235,26 @@ class WindowingBlockSpec extends FlatSpec with Matchers {
     val lazyDut = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), paramsWindowingRunTime, beatBytes = 4) with WindowingStandaloneBlock)
 
     chisel3.iotesters.Driver.execute(Array("-tiwv", "-tbn", "verilator", "-tivsuv"), () => lazyDut.module) {
-      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), WindowFunctionTypes.Blackman(), beatBytes = 4, silentFail = true)
+      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), WindowFunctionTypes.Blackman(), beatBytes = 4, scale = 14, silentFail = true)
+    } should be (true)
+  }
+
+  val paramsWindowingRunTime_14 = WindowingParams.fixed(
+    dataWidth = 16,
+    numPoints = 32,
+    binPoint = 14,
+    numMulPipes = 1,
+    dirName = "test_run_dir",
+    //constWindow = ,
+    memoryFile = "./test_run_dir/BlackmanRunTime.hex",
+    windowFunc = WindowFunctionTypes.Blackman(dataWidth_tmp = 16)//Blackman(dataWidth_tmp = 16)
+  )
+
+  it should "Test windowing block with parameter constWindow = false and binaryPoint of input data is equal to 14" in {
+    val lazyDut = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), paramsWindowingRunTime_14, beatBytes = 4) with WindowingStandaloneBlock)
+
+    chisel3.iotesters.Driver.execute(Array("-tiwv", "-tbn", "verilator", "-tivsuv"), () => lazyDut.module) {
+      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), WindowFunctionTypes.Blackman(), beatBytes = 4, scale = 14, silentFail = true)
     } should be (true)
   }
 }
