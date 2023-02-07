@@ -13,10 +13,13 @@ import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.config.Parameters
 import freechips.rocketchip.diplomacy._
 
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+
 import breeze.math.Complex
 import breeze.signal.{fourierTr, iFourierTr}
 import breeze.linalg._
-import org.scalatest.{FlatSpec, Matchers}
+//import org.scalatest.{FlatSpec, Matchers}
 import scala.math.{Pi, pow}
 
 import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
@@ -199,7 +202,7 @@ class WindowingBlockTester
   stepToCompletion(expectedDepth*5, silentFail = silentFail)
 }
 
-class WindowingBlockSpec extends FlatSpec with Matchers {
+class WindowingBlockSpec extends AnyFlatSpec with Matchers {
   implicit val p: Parameters = Parameters.empty
 
   val paramsWindowingConst = WindowingParams.fixed(

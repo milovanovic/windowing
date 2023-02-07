@@ -6,6 +6,7 @@ import chisel3.util._
 //import chisel3.util.experimental.loadMemoryFromFileInline
 import chisel3.experimental._
 import chisel3.util.experimental.loadMemoryFromFile
+import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
 import dsptools._
 import dsptools.numbers._
@@ -305,5 +306,8 @@ object WindowingBlockApp extends App
   val testModule = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0x0FFF), paramsWindowing, beatBytes = 4) with WindowingStandaloneBlock {
     override def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
   })
-  chisel3.Driver.execute(args, ()=> testModule.module)
+  (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => testModule.module)))
+
+  //chisel3.Driver.execute(args, ()=> testModule.module)
+
 }
