@@ -32,8 +32,8 @@ import java.io._
 // }
 //
 
-trait WindowingRAMStandaloneBlock extends AXI4WindowingBlockRAM[FixedPoint]  {
-  def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
+trait WindowingRAMMultipleInOutsStandaloneBlock extends AXI4WindowingBlockRAMMultipleInOuts[FixedPoint]  {
+ def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
   val ioMem = mem.map { m => {
     val ioMemNode = BundleBridgeSource(() => AXI4Bundle(standaloneParams))
 
@@ -44,26 +44,36 @@ trait WindowingRAMStandaloneBlock extends AXI4WindowingBlockRAM[FixedPoint]  {
     val ioMem = InModuleBody { ioMemNode.makeIO() }
     ioMem
   }}
-
-  val ioInNode = BundleBridgeSource(() => new AXI4StreamBundle(AXI4StreamBundleParameters(n = 4)))
-  val ioOutNode = BundleBridgeSink[AXI4StreamBundle]()
-
-  ioOutNode :=
-    AXI4StreamToBundleBridge(AXI4StreamSlaveParameters()) :=
+  val numIns = 4
+  val ins: Seq[ModuleValue[AXI4StreamBundle]] = for (i <- 0 until numIns) yield {
+    implicit val valName = ValName(s"in_$i")
+    val in = BundleBridgeSource[AXI4StreamBundle](() => AXI4StreamBundle(AXI4StreamBundleParameters(n = 4)))
     streamNode :=
-    BundleBridgeToAXI4Stream(AXI4StreamMasterParameters(n = 4)) :=
-    ioInNode
-
-  val in = InModuleBody { ioInNode.makeIO() }
-  val out = InModuleBody { ioOutNode.makeIO() }
+      BundleBridgeToAXI4Stream(AXI4StreamMasterPortParameters(AXI4StreamMasterParameters(n = 4))) :=
+      in
+    InModuleBody { in.makeIO() }
+  }
+  val outs: Seq[ModuleValue[AXI4StreamBundle]] = for (o <- 0 until numIns) yield {
+    implicit val valName = ValName(s"out_$o")
+    val out = BundleBridgeSink[AXI4StreamBundle]()
+    out :=
+      AXI4StreamToBundleBridge(AXI4StreamSlavePortParameters(AXI4StreamSlaveParameters())) :=
+      streamNode
+    InModuleBody { out.makeIO() }
+  }
 }
 
-class AXI4WindowingBlockRAM [T <: Data : Real: BinaryRepresentation] (csrAddress: AddressSet, ramAddress: AddressSet, val params: WindowingParams[T], beatBytes: Int) extends LazyModule()(Parameters.empty) with AXI4DspBlock {
+class AXI4WindowingBlockRAMMultipleInOuts [T <: Data : Real: BinaryRepresentation] (csrAddress: AddressSet, ramAddress: AddressSet, val params: WindowingParams[T], beatBytes: Int) extends LazyModule()(Parameters.empty) with AXI4DspBlock {
 
-  val streamNode = AXI4StreamIdentityNode()
+  val streamNode = AXI4StreamNexusNode(
+    masterFn = (ms: Seq[AXI4StreamMasterPortParameters]) =>
+      AXI4StreamMasterPortParameters(ms.map(_.masters).reduce(_ ++ _)),
+    slaveFn = ss => {
+      AXI4StreamSlavePortParameters(ss.map(_.slaves).reduce(_ ++ _))
+    }
+  )
   val mem = Some(AXI4IdentityNode())
   val axiRegSlaveNode = AXI4RegisterNode(address = csrAddress, beatBytes = beatBytes) // AXI4 Register
-
 
   val ramSlaveNode = AXI4SlaveNode(Seq(AXI4SlavePortParameters(
   Seq(AXI4SlaveParameters(
@@ -84,8 +94,8 @@ class AXI4WindowingBlockRAM [T <: Data : Real: BinaryRepresentation] (csrAddress
   val numMulPipes = params.numMulPipes
 
   lazy val module = new LazyModuleImp(this) {
-    val (in, _)  = streamNode.in(0)
-    val (out, _) = streamNode.out(0)
+    val (ins, _) = streamNode.in.unzip
+    val (outs, _) = streamNode.out.unzip
 
     val (ramIn, ramInEdge) = ramSlaveNode.in.head
     val windowMem = SyncReadMem(params.numPoints, params.protoWin)
@@ -149,19 +159,19 @@ class AXI4WindowingBlockRAM [T <: Data : Real: BinaryRepresentation] (csrAddress
 
     switch(state) {
       is (sIdle) {
-        when(in.fire) {
+        when(ins(0).fire) {
           state_next := sProcess
         }
       }
       is (sProcess) {
-        when(in.bits.last) {
+        when(ins(0).bits.last) {
           state_next := sIdle
         }
       }
     }
     state := state_next
 
-    when (in.fire) {
+    when (ins(0).fire) {
       r_addr_reg := r_addr_reg + 1.U
     }
     when (r_addr_reg === (numPoints - 1.U)) {
@@ -191,46 +201,53 @@ class AXI4WindowingBlockRAM [T <: Data : Real: BinaryRepresentation] (csrAddress
         RegFieldDesc(name = "fftDir", desc = "transform direction: fft or ifft"))
     )
     axiRegSlaveNode.regmap(fields.zipWithIndex.map({ case (f, i) => i * beatBytes -> Seq(f)}): _*)
-    val inComplex = RegNext(in.bits.data.asTypeOf(params.protoIQ))
-    val windowedInput =  Wire(params.protoIQ.cloneType)
 
-    when (enableWind) {
-      DspContext.alter(DspContext.current.copy(
-        trimType = params.trimType,
-        numMulPipes = params.numMulPipes,
-        binaryPointGrowth = 0
-      )) {
-        windowedInput.real := inComplex.real context_* winCoeff
-        windowedInput.imag := inComplex.imag context_* winCoeff
+    for ((in, inIdx) <- ins.zipWithIndex) {
+      val inComplex = RegNext(in.bits.data.asTypeOf(params.protoIQ))
+      val windowedInput =  Wire(params.protoIQ.cloneType)
+      when (enableWind) {
+        DspContext.alter(DspContext.current.copy(
+          trimType = params.trimType,
+          numMulPipes = params.numMulPipes,
+          binaryPointGrowth = 0
+        )) {
+          windowedInput.real := inComplex.real context_* winCoeff
+          windowedInput.imag := inComplex.imag context_* winCoeff
+        }
       }
+      .otherwise {
+        windowedInput := ShiftRegister(inComplex, numMulPipes, en = true.B)
+      }
+
+      if (params.constWindow && numMulPipes == 0) {
+        outs(inIdx).valid        := in.valid
+        outs(inIdx).bits.data    := windowedInput.asUInt
+        outs(inIdx).bits.last    := in.bits.last
+      }
+      else {
+        val queueDelay = numMulPipes + 2
+        val inputsDelay = numMulPipes + 1
+        val queueData = Module(new Queue(params.protoIQ.cloneType, queueDelay, flow = true)) // + 1 for input delaying
+        queueData.io.enq.bits := windowedInput
+        queueData.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B)
+        queueData.io.deq.ready := outs(inIdx).ready
+
+        val queueLast = Module(new Queue(Bool(), queueDelay, flow = true)) // +1 for input delaying
+        queueLast.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B) // +1 for input delaying
+        queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B) // +1 for input delaying
+        queueLast.io.deq.ready := outs(inIdx).ready
+
+        // Connect output
+        outs(inIdx).valid        := queueData.io.deq.valid
+        outs(inIdx).bits.data    := queueData.io.deq.bits.asUInt
+        outs(inIdx).bits.last    := queueLast.io.deq.bits
+      }
+      in.ready          := outs(inIdx).ready
     }
-    .otherwise {
-      windowedInput := ShiftRegister(inComplex, numMulPipes, en = true.B)
-    }
-
-    val queueDelay = if (params.constWindow) numMulPipes + 1  else numMulPipes + 2
-    val inputsDelay = if (params.constWindow) numMulPipes else numMulPipes + 1
-    val queueData = Module(new Queue(params.protoIQ.cloneType, queueDelay, flow = true)) // + 1 for input delaying
-    queueData.io.enq.bits := windowedInput
-    queueData.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B)
-    queueData.io.deq.ready := out.ready
-
-    val queueLast = Module(new Queue(Bool(), queueDelay, flow = true)) // +1 for input delaying
-    queueLast.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B) // +1 for input delaying
-    queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B) // +1 for input delaying
-    queueLast.io.deq.ready := out.ready
-
-    // Connect output
-    out.valid        := queueData.io.deq.valid
-    out.bits.data    := queueData.io.deq.bits.asUInt
-    out.bits.last    := queueLast.io.deq.bits
-    //}
-
-    in.ready          := out.ready
   }
 }
 
-object AXI4WindowingBlockRAMApp extends App
+object AXI4WindowingBlockRAMMultipleInOutsApp extends App
 {
   val paramsWindowing = WindowingParams.fixed(
     dataWidth = 16,
@@ -243,7 +260,7 @@ object AXI4WindowingBlockRAMApp extends App
   )
   implicit val p: Parameters = Parameters.empty
 
-  val testModule = LazyModule(new AXI4WindowingBlockRAM(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0x0FFF), paramsWindowing, beatBytes = 4) with WindowingRAMStandaloneBlock {
+  val testModule = LazyModule(new AXI4WindowingBlockRAMMultipleInOuts(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0x0FFF), paramsWindowing, beatBytes = 4) with WindowingRAMMultipleInOutsStandaloneBlock {
     override def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
   })
   (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => testModule.module)))
