@@ -46,8 +46,8 @@ import chisel3.iotesters.{PeekPokeTester, Driver, ChiselFlatSpec}
 class WindowingBlockTester
 (
   dut: WindowingBlock[FixedPoint] with WindowingStandaloneBlock,
-  csrAddress: AddressSet,
-  ramAddress: AddressSet,
+  address: AddressSet,
+  ramAddress: Option[AddressSet],
   windowFuncRunTime: WindowFunctionType = WindowFunctionTypes.Blackman(),
   freq      : Double = 15.54/1024,
   tolerance : Int = 3,
@@ -56,7 +56,6 @@ class WindowingBlockTester
   silentFail: Boolean = false
 ) extends PeekPokeTester(dut.module) with AXI4StreamModel with AXI4MasterModel with HasSignalUtils {
   def memAXI: AXI4Bundle = dut.ioMem.get
-
 
   val mod = dut.module
   val params = dut.params
@@ -112,7 +111,7 @@ class WindowingBlockTester
 
   if (params.constWindow == true) {
     // enable windowing
-    memWriteWord(csrAddress.base + beatBytes, BigInt(1))
+    memWriteWord(address.base + beatBytes, BigInt(1))
     master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
     master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
     // check only one fft window
@@ -158,11 +157,11 @@ class WindowingBlockTester
     }
     val windowHDW = windowSeqRunTime.map(c => BigDecimal(c * (1 << (params.protoWin.getWidth - 2))).toBigInt)
     while (cycle < fftSize) {
-      memWriteWord(ramAddress.base + cycle*beatBytes, windowHDW(cycle))
+      memWriteWord(ramAddress.get.base + cycle*beatBytes, windowHDW(cycle))
       cycle += 1
     }
     step(500)
-    memWriteWord(csrAddress.base + beatBytes, BigInt(1))
+    memWriteWord(address.base + beatBytes, BigInt(1))
 
     master.addTransactions((0 until axi4StreamIn.size).map(i => AXI4StreamTransaction(data = axi4StreamIn(i))))
     master.addTransactions(axi4StreamIn.zipWithIndex.map { case (data, idx) => AXI4StreamTransaction(data = data,  last = if (idx == axi4StreamIn.length - 1) true else false) })
@@ -197,7 +196,6 @@ class WindowingBlockTester
     }
   }
 
-  // here compare result
   step(100)
   stepToCompletion(expectedDepth*5, silentFail = silentFail)
 }
@@ -217,10 +215,10 @@ class WindowingBlockSpec extends AnyFlatSpec with Matchers {
   )
 
   it should "Test windowing block with parameter constWindow = true" in {
-    val lazyDut = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), paramsWindowingConst, beatBytes = 4) with WindowingStandaloneBlock)
+    val lazyDut = LazyModule(new WindowingBlock(address = AddressSet(0x010000, 0xFF), ramAddress = None, paramsWindowingConst, beatBytes = 4) with WindowingStandaloneBlock)
 
     chisel3.iotesters.Driver.execute(Array("-tiwv", "-tbn", "verilator", "-tivsuv"), () => lazyDut.module) {
-      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), beatBytes = 4, scale = 14, silentFail = true)
+      c => new WindowingBlockTester(lazyDut, address = AddressSet(0x010000, 0xFF), ramAddress = None, beatBytes = 4, scale = 14, silentFail = true)
     } should be (true)
   }
   
@@ -235,10 +233,10 @@ class WindowingBlockSpec extends AnyFlatSpec with Matchers {
   )
 
   it should "Test windowing block with parameter constWindow = false" in {
-    val lazyDut = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), paramsWindowingRunTime, beatBytes = 4) with WindowingStandaloneBlock)
+    val lazyDut = LazyModule(new WindowingBlock(address = AddressSet(0x010000, 0xFF), ramAddress = Some(AddressSet(0x000000, 0xFFF)), paramsWindowingRunTime, beatBytes = 4) with WindowingStandaloneBlock)
 
     chisel3.iotesters.Driver.execute(Array("-tiwv", "-tbn", "verilator", "-tivsuv"), () => lazyDut.module) {
-      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), WindowFunctionTypes.Blackman(), beatBytes = 4, scale = 14, silentFail = true)
+      c => new WindowingBlockTester(lazyDut, address = AddressSet(0x010000, 0xFF), ramAddress = Some(AddressSet(0x000000, 0xFFF)), WindowFunctionTypes.Blackman(), beatBytes = 4, scale = 14, silentFail = true)
     } should be (true)
   }
 
@@ -254,10 +252,10 @@ class WindowingBlockSpec extends AnyFlatSpec with Matchers {
   )
 
   it should "Test windowing block with parameter constWindow = false and binaryPoint of input data is equal to 14" in {
-    val lazyDut = LazyModule(new WindowingBlock(csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), paramsWindowingRunTime_14, beatBytes = 4) with WindowingStandaloneBlock)
+    val lazyDut = LazyModule(new WindowingBlock(address = AddressSet(0x010000, 0xFF), ramAddress = Some(AddressSet(0x000000, 0xFFF)), paramsWindowingRunTime_14, beatBytes = 4) with WindowingStandaloneBlock)
 
     chisel3.iotesters.Driver.execute(Array("-tiwv", "-tbn", "verilator", "-tivsuv"), () => lazyDut.module) {
-      c => new WindowingBlockTester(lazyDut, csrAddress = AddressSet(0x010000, 0xFF), ramAddress = AddressSet(0x000000, 0xFFF), WindowFunctionTypes.Blackman(), beatBytes = 4, scale = 14, silentFail = true)
+      c => new WindowingBlockTester(lazyDut, address = AddressSet(0x010000, 0xFF), ramAddress = Some(AddressSet(0x000000, 0xFFF)), WindowFunctionTypes.Blackman(), beatBytes = 4, scale = 14, silentFail = true)
     } should be (true)
   }
 }
