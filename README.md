@@ -69,3 +69,5 @@ Besides main source code, some tests for windowing module are provided in this r
 
 ## TODO
 * Check `numMulPipes` equal to zero and `constWindow` parameter is on true - fix that
+* Consider to remove windowing blocks with single input and single output stream
+* Update documentation
