@@ -160,7 +160,9 @@ abstract class WindowingBlockROMMultipleInOuts [T <: Data : Real: BinaryRepresen
     regmap(fields.zipWithIndex.map({ case (f, i) => i * beatBytes -> Seq(f)}): _*)
 
     for ((in, inIdx) <- ins.zipWithIndex) {
-      val inComplex = in.bits.data.asTypeOf(params.protoIQ)
+      val inComplex = Wire(params.protoIQ.cloneType)
+      inComplex.real := in.bits.data(in.bits.data.getWidth/2 - 1, 0).asTypeOf(params.protoIQ.imag)
+      inComplex.imag := in.bits.data(in.bits.data.getWidth-1, in.bits.data.getWidth/2).asTypeOf(params.protoIQ.real)
       val windowedInput =  Wire(params.protoIQ.cloneType)
       when (enableWind) {
         DspContext.alter(DspContext.current.copy(

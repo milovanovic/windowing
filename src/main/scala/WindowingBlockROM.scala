@@ -147,7 +147,11 @@ abstract class WindowingBlockROM [T <: Data : Real: BinaryRepresentation, D, U, 
     )
     regmap(fields.zipWithIndex.map({ case (f, i) => i * beatBytes -> Seq(f)}): _*)
 
-    val inComplex = if (params.constWindow) in.bits.data.asTypeOf(params.protoIQ) else RegNext(in.bits.data.asTypeOf(params.protoIQ))
+    //val inComplex = if (params.constWindow) in.bits.data.asTypeOf(params.protoIQ) else RegNext(in.bits.data.asTypeOf(params.protoIQ))
+    val inComplex = Wire(params.protoIQ.cloneType)
+    inComplex.real := in.bits.data(in.bits.data.getWidth/2 - 1, 0).asTypeOf(params.protoIQ.imag)
+    inComplex.imag := in.bits.data(in.bits.data.getWidth-1, in.bits.data.getWidth/2).asTypeOf(params.protoIQ.real)
+
     val windowedInput =  Wire(params.protoIQ.cloneType)
 
     when (enableWind) {

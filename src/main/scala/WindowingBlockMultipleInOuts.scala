@@ -56,7 +56,6 @@ class WindowingBlockMultipleInOuts [T <: Data : Real: BinaryRepresentation] (add
 
   val windowing = if (params.constWindow) LazyModule(new AXI4WindowingBlockROMMultipleInOuts(params, address, beatBytes)) else LazyModule(new AXI4WindowingBlockRAMMultipleInOuts(address, ramAddress.get, params, beatBytes))
   val streamNode = NodeHandle(windowing.streamNode, windowing.streamNode)
-
   lazy val module = new LazyModuleImp(this)
 }
 

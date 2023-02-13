@@ -203,6 +203,7 @@ class AXI4WindowingBlockRAMMultipleInOuts [T <: Data : Real: BinaryRepresentatio
     axiRegSlaveNode.regmap(fields.zipWithIndex.map({ case (f, i) => i * beatBytes -> Seq(f)}): _*)
 
     for ((in, inIdx) <- ins.zipWithIndex) {
+      // TODO: Enable all datawidths not only 16
       val inComplex = RegNext(in.bits.data.asTypeOf(params.protoIQ))
       val windowedInput =  Wire(params.protoIQ.cloneType)
       when (enableWind) {
