@@ -2,8 +2,7 @@ package windowing
 
 import chisel3._
 import chisel3.util._
-//  not suppported for chisel version used in this project
-//import chisel3.util.experimental.loadMemoryFromFileInline
+
 import chisel3.experimental._
 import chisel3.util.experimental.loadMemoryFromFile
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
@@ -178,11 +177,11 @@ abstract class WindowingBlockROM [T <: Data : Real: BinaryRepresentation, D, U, 
       val inputsDelay = if (params.constWindow) numMulPipes else numMulPipes + 1
       val queueData = Module(new Queue(params.protoIQ.cloneType, queueDelay, flow = true)) // + 1 for input delaying
       queueData.io.enq.bits := windowedInput
-      queueData.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B)
+      queueData.io.enq.valid := ShiftRegister(in.valid && in.ready, inputsDelay, en = true.B)
       queueData.io.deq.ready := out.ready
 
       val queueLast = Module(new Queue(Bool(), queueDelay, flow = true)) // +1 for input delaying
-      queueLast.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B) // +1 for input delaying
+      queueLast.io.enq.valid := ShiftRegister(in.valid && in.ready, inputsDelay, en = true.B) // +1 for input delaying
       queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B) // +1 for input delaying
       queueLast.io.deq.ready := out.ready
 

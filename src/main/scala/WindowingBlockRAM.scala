@@ -212,11 +212,11 @@ class AXI4WindowingBlockRAM [T <: Data : Real: BinaryRepresentation] (csrAddress
     val inputsDelay = if (params.constWindow) numMulPipes else numMulPipes + 1
     val queueData = Module(new Queue(params.protoIQ.cloneType, queueDelay, flow = true)) // + 1 for input delaying
     queueData.io.enq.bits := windowedInput
-    queueData.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B)
+    queueData.io.enq.valid := ShiftRegister(in.valid && in.ready, inputsDelay, en = true.B)
     queueData.io.deq.ready := out.ready
 
     val queueLast = Module(new Queue(Bool(), queueDelay, flow = true)) // +1 for input delaying
-    queueLast.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B) // +1 for input delaying
+    queueLast.io.enq.valid := ShiftRegister(in.valid && in.ready, inputsDelay, en = true.B) // +1 for input delaying
     queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B) // +1 for input delaying
     queueLast.io.deq.ready := out.ready
 

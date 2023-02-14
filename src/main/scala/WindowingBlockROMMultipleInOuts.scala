@@ -2,8 +2,7 @@ package windowing
 
 import chisel3._
 import chisel3.util._
-//  not suppported for chisel version used in this project
-//import chisel3.util.experimental.loadMemoryFromFileInline
+
 import chisel3.experimental._
 import chisel3.util.experimental.loadMemoryFromFile
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
@@ -136,6 +135,11 @@ abstract class WindowingBlockROMMultipleInOuts [T <: Data : Real: BinaryRepresen
     }
 
     val winCoeff = windowROM(address_rom)
+    val tmpCoeff = Wire(params.protoWin.cloneType)
+    tmpCoeff := winCoeff
+
+    dontTouch(tmpCoeff)
+    tmpCoeff.suggestName("tmpCoeff")
 
     // Control registers
     val fftSize         = RegInit(params.numPoints.U(log2Ceil(params.numPoints + 1).W)) // default value is equal to compile time parameter for fft size
@@ -163,7 +167,7 @@ abstract class WindowingBlockROMMultipleInOuts [T <: Data : Real: BinaryRepresen
       val inComplex = Wire(params.protoIQ.cloneType)
       inComplex.real := in.bits.data(in.bits.data.getWidth/2 - 1, 0).asTypeOf(params.protoIQ.imag)
       inComplex.imag := in.bits.data(in.bits.data.getWidth-1, in.bits.data.getWidth/2).asTypeOf(params.protoIQ.real)
-      val windowedInput =  Wire(params.protoIQ.cloneType)
+      val windowedInput = Wire(params.protoIQ.cloneType)
       when (enableWind) {
         DspContext.alter(DspContext.current.copy(
           trimType = params.trimType,
@@ -180,7 +184,12 @@ abstract class WindowingBlockROMMultipleInOuts [T <: Data : Real: BinaryRepresen
 
       if (params.constWindow && numMulPipes == 0) {
         outs(inIdx).valid        := in.valid
-        outs(inIdx).bits.data    := windowedInput.asUInt
+        //outs(inIdx).bits.data    := windowedInput.asUInt
+        val realTmp = WireDefault(0.S((in.bits.data.getWidth/2).W))
+        val imagTmp = WireDefault(0.S((in.bits.data.getWidth/2).W))
+        realTmp := windowedInput.real.asTypeOf(realTmp)
+        imagTmp := windowedInput.imag.asTypeOf(imagTmp)
+        outs(inIdx).bits.data    := Cat(imagTmp, realTmp).asUInt
         outs(inIdx).bits.last    := in.bits.last
       }
       else {
@@ -188,17 +197,23 @@ abstract class WindowingBlockROMMultipleInOuts [T <: Data : Real: BinaryRepresen
         val inputsDelay = numMulPipes
         val queueData = Module(new Queue(params.protoIQ.cloneType, queueDelay, flow = true)) // + 1 for input delaying
         queueData.io.enq.bits := windowedInput
-        queueData.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B)
+        queueData.io.enq.valid := ShiftRegister(in.valid && in.ready, inputsDelay, en = true.B)
         queueData.io.deq.ready := outs(inIdx).ready
 
-        val queueLast = Module(new Queue(Bool(), queueDelay, flow = true)) // +1 for input delaying
-        queueLast.io.enq.valid := ShiftRegister(in.valid, inputsDelay, en = true.B) // +1 for input delaying
-        queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B) // +1 for input delaying
+        val queueLast = Module(new Queue(Bool(), queueDelay, flow = true))
+        queueLast.io.enq.valid := ShiftRegister(in.valid && in.ready, inputsDelay, en = true.B)
+        queueLast.io.enq.bits := ShiftRegister(in.bits.last, inputsDelay, en = true.B)
         queueLast.io.deq.ready := outs(inIdx).ready
-
+        val realTmp = WireDefault(0.S((in.bits.data.getWidth/2).W))
+        val imagTmp = WireDefault(0.S((in.bits.data.getWidth/2).W))
+        realTmp := queueData.io.deq.bits.real.asTypeOf(realTmp)
+        imagTmp := queueData.io.deq.bits.imag.asTypeOf(imagTmp)
+        dontTouch(realTmp)
+        dontTouch(imagTmp)
         // Connect output
         outs(inIdx).valid        := queueData.io.deq.valid
-        outs(inIdx).bits.data    := queueData.io.deq.bits.asUInt
+        outs(inIdx).bits.data    := Cat(imagTmp, realTmp).asUInt
+        //outs(inIdx).bits.data    := queueData.io.deq.bits.asUInt
         outs(inIdx).bits.last    := queueLast.io.deq.bits
       }
       in.ready          := outs(inIdx).ready
