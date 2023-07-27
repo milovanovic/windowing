@@ -14,9 +14,9 @@ import dsptools.numbers._
 import dspblocks._
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.amba.axi4stream._
-import freechips.rocketchip.config._
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.regmapper._
+import org.chipsalliance.cde.config.Parameters
 
 import java.io._
 
