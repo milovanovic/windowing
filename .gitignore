@@ -1,9 +1,10 @@
 test_run_dir/
+
 *.fir
 *.v
-*.conf
-*.json
-*.f
+*.zip
 
+.idea
+.bsp/
 target/
 project/
