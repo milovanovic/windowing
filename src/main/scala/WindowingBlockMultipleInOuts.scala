@@ -1,10 +1,10 @@
 package windowing
 
-import chisel3._
-import chisel3.util._
 //  not suppported for chisel version used in this project
 //import chisel3.util.experimental.loadMemoryFromFileInline
-import chisel3.experimental._
+import chisel3.util._
+import chisel3.{fromDoubleToLiteral => _, fromIntToBinaryPoint => _, _}
+import fixedpoint._
 import chisel3.util.experimental.loadMemoryFromFile
 import chisel3.stage.{ChiselGeneratorAnnotation, ChiselStage}
 
@@ -19,18 +19,20 @@ import freechips.rocketchip.regmapper._
 import org.chipsalliance.cde.config.Parameters
 import java.io._
 
-trait WindowingMultipleInOutsStandaloneBlock extends WindowingBlockMultipleInOuts[FixedPoint]  {
+trait WindowingMultipleInOutsStandaloneBlock extends WindowingBlockMultipleInOuts[FixedPoint] {
   def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
-  val ioMem = windowing.mem.map { m => {
-    val ioMemNode = BundleBridgeSource(() => AXI4Bundle(standaloneParams))
+  val ioMem = windowing.mem.map { m =>
+    {
+      val ioMemNode = BundleBridgeSource(() => AXI4Bundle(standaloneParams))
 
-    m :=
-      BundleBridgeToAXI4(AXI4MasterPortParameters(Seq(AXI4MasterParameters("bundleBridgeToAXI4")))) :=
-      ioMemNode
+      m :=
+        BundleBridgeToAXI4(AXI4MasterPortParameters(Seq(AXI4MasterParameters("bundleBridgeToAXI4")))) :=
+        ioMemNode
 
-    val ioMem = InModuleBody { ioMemNode.makeIO() }
-    ioMem
-  }}
+      val ioMem = InModuleBody { ioMemNode.makeIO() }
+      ioMem
+    }
+  }
   val numIns = 4
   val ins: Seq[ModuleValue[AXI4StreamBundle]] = for (i <- 0 until numIns) yield {
     implicit val valName = ValName(s"in_$i")
@@ -50,16 +52,24 @@ trait WindowingMultipleInOutsStandaloneBlock extends WindowingBlockMultipleInOut
   }
 }
 
-class WindowingBlockMultipleInOuts [T <: Data : Real: BinaryRepresentation] (address: AddressSet, ramAddress: Option[AddressSet], val params: WindowingParams[T], beatBytes: Int)(implicit p: Parameters) extends LazyModule(){
+class WindowingBlockMultipleInOuts[T <: Data: Real: BinaryRepresentation](
+  address:    AddressSet,
+  ramAddress: Option[AddressSet],
+  val params: WindowingParams[T],
+  beatBytes:  Int
+)(
+  implicit p: Parameters)
+    extends LazyModule() {
   if (params.constWindow == false) require(ramAddress != None)
 
-  val windowing = if (params.constWindow) LazyModule(new AXI4WindowingBlockROMMultipleInOuts(params, address, beatBytes)) else LazyModule(new AXI4WindowingBlockRAMMultipleInOuts(address, ramAddress.get, params, beatBytes))
+  val windowing =
+    if (params.constWindow) LazyModule(new AXI4WindowingBlockROMMultipleInOuts(params, address, beatBytes))
+    else LazyModule(new AXI4WindowingBlockRAMMultipleInOuts(address, ramAddress.get, params, beatBytes))
   val streamNode = NodeHandle(windowing.streamNode, windowing.streamNode)
   lazy val module = new LazyModuleImp(this)
 }
 
-object WindowingBlockMultipleInOutsApp extends App
-{
+object WindowingBlockMultipleInOutsApp extends App {
   val paramsWindowing = WindowingParams.fixed(
     dataWidth = 16,
     binPoint = 14,
@@ -73,9 +83,16 @@ object WindowingBlockMultipleInOutsApp extends App
 
   implicit val p: Parameters = Parameters.empty
 
-  val testModule = LazyModule(new WindowingBlockMultipleInOuts(address = AddressSet(0x010000, 0xFF), ramAddress = Some(AddressSet(0x000000, 0x0FFF)), paramsWindowing, beatBytes = 4) with WindowingMultipleInOutsStandaloneBlock {
-    override def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
-  })
+  val testModule = LazyModule(
+    new WindowingBlockMultipleInOuts(
+      address = AddressSet(0x010000, 0xff),
+      ramAddress = Some(AddressSet(0x000000, 0x0fff)),
+      paramsWindowing,
+      beatBytes = 4
+    ) with WindowingMultipleInOutsStandaloneBlock {
+      override def standaloneParams = AXI4BundleParameters(addrBits = 32, dataBits = 32, idBits = 1)
+    }
+  )
   (new ChiselStage).execute(args, Seq(ChiselGeneratorAnnotation(() => testModule.module)))
 
   //chisel3.Driver.execute(args, ()=> testModule.module)
